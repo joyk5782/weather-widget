@@ -17,8 +17,8 @@ FONT_PATH = os.path.join(ASSET_DIR, "fonts", "handwriting.ttf")
 OUTPUT_PATH = "weather.png"
 
 # 텍스트 위치/크기
-FONT_SIZE = 45
-TEXT_Y = 50   # 필요하면 220~238 사이로 조절
+FONT_SIZE = 150
+TEXT_Y = 245   # 필요하면 220~238 사이로 조절
 CITY_COLOR = "#3c3328"
 TEMP_COLOR = "#2d8bd8"
 
