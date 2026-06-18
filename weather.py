@@ -172,36 +172,90 @@ def draw_weather_icon(draw, kind, cx, cy):
         draw_sun(cx, cy, 10)
         
 def create_image(values, base_date, base_time):
-    width = 170
+    width = 171
     height = 120
 
     tmp, status, icon_kind, pop, reh = weather_text_and_icon(values)
 
-    img = Image.new("RGB", (width, height), "#eef5df")
+    img = Image.new("RGB", (width, height), "#d9ecbd")
     draw = ImageDraw.Draw(img)
 
-    bg = "#f8fbf1"
-    border = "#a9cc72"
-    accent_bg = "#edf5de"
-    text_dark = "#496628"
-    text_mid = "#6f9440"
-    text_light = "#88a663"
+    # 배경: 네이버 기본 위젯처럼 연하늘+연두 느낌
+    bg_top = "#cfe8ef"
+    bg_mid = "#dff0cf"
+    bg_bottom = "#c9e3b0"
 
-    draw.rounded_rectangle((4, 4, width - 4, height - 4), radius=14, fill=bg, outline=border, width=2)
-    draw.rounded_rectangle((16, 12, width - 16, 28), radius=8, fill=accent_bg)
+    for y in range(height):
+        if y < 60:
+            ratio = y / 60
+            r = int(int(bg_top[1:3], 16) * (1 - ratio) + int(bg_mid[1:3], 16) * ratio)
+            g = int(int(bg_top[3:5], 16) * (1 - ratio) + int(bg_mid[3:5], 16) * ratio)
+            b = int(int(bg_top[5:7], 16) * (1 - ratio) + int(bg_mid[5:7], 16) * ratio)
+        else:
+            ratio = (y - 60) / 60
+            r = int(int(bg_mid[1:3], 16) * (1 - ratio) + int(bg_bottom[1:3], 16) * ratio)
+            g = int(int(bg_mid[3:5], 16) * (1 - ratio) + int(bg_bottom[3:5], 16) * ratio)
+            b = int(int(bg_mid[5:7], 16) * (1 - ratio) + int(bg_bottom[5:7], 16) * ratio)
+        draw.line((0, y, width, y), fill=(r, g, b))
 
-    font_title = load_font(12)
-    font_temp = load_font(19)
-    font_status = load_font(13)
-    font_sub = load_font(10)
+    # 아주 옅은 종이/수채 느낌 점
+    import random
+    random.seed(7)
+    for _ in range(120):
+        x = random.randint(0, width - 1)
+        y = random.randint(0, height - 1)
+        alpha_color = random.choice(["#ffffff", "#eef7d8", "#b8d89b", "#c8e7ed"])
+        draw.point((x, y), fill=alpha_color)
 
-    center_text(draw, "오늘의 날씨", 14, font_title, text_mid, width)
+    # 둥근 테두리
+    draw.rounded_rectangle(
+        (1, 1, width - 2, height - 2),
+        radius=8,
+        outline="#a7cf7a",
+        width=1
+    )
 
-    draw_weather_icon(draw, icon_kind, width // 2, 47)
+    # 폰트
+    font_top = load_font(17)
+    font_bottom = load_font(13)
 
-    center_text(draw, f"{AREA_NAME} {tmp}℃", 70, font_temp, text_dark, width)
-    center_text(draw, status, 91, font_status, text_mid, width)
-    center_text(draw, f"강수 {pop}% · 습도 {reh}%", 106, font_sub, text_light, width)
+    text_dark = "#2f5f54"
+    text_blue = "#2b8ed6"
+
+    # 상태 영문 변환
+    if icon_kind == "sunny":
+        top_text = "SUNNY"
+    elif icon_kind == "partly":
+        top_text = "CLOUDY"
+    elif icon_kind == "cloudy":
+        top_text = "CLOUDY"
+    elif icon_kind == "rain":
+        top_text = "RAINY"
+    elif icon_kind == "shower":
+        top_text = "SHOWER"
+    elif icon_kind == "snow":
+        top_text = "SNOWY"
+    else:
+        top_text = status.upper()
+
+    # 1구역: 상단 35px 중앙
+    center_text(draw, top_text, 10, font_top, text_dark, width)
+
+    # 2구역: 가운데 50px 중앙
+    draw_weather_icon(draw, icon_kind, width // 2, 61)
+
+    # 3구역: 하단 35px 중앙
+    bottom_text = f"{AREA_NAME} {tmp}"
+    bbox = draw.textbbox((0, 0), bottom_text, font=font_bottom)
+    text_width = bbox[2] - bbox[0]
+    x = (width - text_width) / 2
+    y = 98
+
+    draw.text((x, y), f"{AREA_NAME} ", font=font_bottom, fill=text_dark)
+
+    area_bbox = draw.textbbox((0, 0), f"{AREA_NAME} ", font=font_bottom)
+    area_width = area_bbox[2] - area_bbox[0]
+    draw.text((x + area_width, y), f"{tmp}", font=font_bottom, fill=text_blue)
 
     img.save("weather.png")
 
