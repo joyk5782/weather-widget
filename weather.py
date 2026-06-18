@@ -18,7 +18,7 @@ OUTPUT_PATH = "weather.png"
 
 # 텍스트 위치/크기
 FONT_SIZE = 23
-TEXT_Y = 220   # 필요하면 220~238 사이로 조절
+TEXT_Y = 200   # 필요하면 220~238 사이로 조절
 CITY_COLOR = "#3c3328"
 TEMP_COLOR = "#2d8bd8"
 
