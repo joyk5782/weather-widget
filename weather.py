@@ -1,4 +1,6 @@
 import os
+import math
+import random
 import requests
 from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
@@ -113,63 +115,104 @@ def center_text(draw, text, y, font, fill, image_width):
     x = (image_width - text_width) / 2
     draw.text((x, y), text, font=font, fill=fill)
 
+
+
+def draw_wobbly_line(draw, p1, p2, fill, width=2, jitter=1.2, steps=6):
+    x1, y1 = p1
+    x2, y2 = p2
+    points = []
+    for i in range(steps + 1):
+        t = i / steps
+        x = x1 + (x2 - x1) * t
+        y = y1 + (y2 - y1) * t
+        if 0 < i < steps:
+            x += random.uniform(-jitter, jitter)
+            y += random.uniform(-jitter, jitter)
+        points.append((x, y))
+    draw.line(points, fill=fill, width=width)
+
+
+def draw_wobbly_circle(draw, cx, cy, r, outline, width=2, jitter=1.2, points_count=24):
+    points = []
+    for i in range(points_count + 1):
+        ang = (math.pi * 2) * i / points_count
+        rr = r + random.uniform(-jitter, jitter)
+        x = cx + math.cos(ang) * rr
+        y = cy + math.sin(ang) * rr
+        points.append((x, y))
+    draw.line(points, fill=outline, width=width)
+
+
+def draw_sketch_sun(draw, cx, cy, ink):
+    random.seed(11)
+
+    # 얼굴 원
+    draw_wobbly_circle(draw, cx, cy, 11, outline=ink, width=2, jitter=0.8)
+
+    # 눈
+    draw.ellipse((cx - 5, cy - 2, cx - 3, cy, ), fill=ink)
+    draw.ellipse((cx + 3, cy - 2, cx + 5, cy, ), fill=ink)
+
+    # 입
+    draw.arc((cx - 5, cy + 1, cx + 5, cy + 7), start=15, end=165, fill=ink, width=1)
+
+    # 광선
+    rays = [
+        (0, -22), (9, -19), (18, -10), (22, 0), (18, 10),
+        (9, 19), (0, 22), (-9, 19), (-18, 10), (-22, 0),
+        (-18, -10), (-9, -19)
+    ]
+    for dx, dy in rays:
+        length_scale = random.uniform(0.88, 1.08)
+        x1 = cx + dx * 0.62
+        y1 = cy + dy * 0.62
+        x2 = cx + dx * length_scale
+        y2 = cy + dy * length_scale
+        draw_wobbly_line(draw, (x1, y1), (x2, y2), fill=ink, width=2, jitter=0.7, steps=4)
+
+
+def draw_sketch_cloud(draw, cx, cy, ink):
+    random.seed(17)
+    draw.arc((cx - 28, cy - 2, cx - 6, cy + 18), start=180, end=360, fill=ink, width=2)
+    draw.arc((cx - 10, cy - 12, cx + 10, cy + 12), start=180, end=360, fill=ink, width=2)
+    draw.arc((cx + 6, cy - 4, cx + 28, cy + 16), start=180, end=360, fill=ink, width=2)
+    draw_wobbly_line(draw, (cx - 28, cy + 8), (cx + 28, cy + 8), fill=ink, width=2, jitter=0.6, steps=7)
+
+
 def draw_weather_icon(draw, kind, cx, cy):
-    sun_fill = "#f4cf5a"
-    sun_line = "#d8b13d"
-    cloud_fill = "#edf2e6"
-    cloud_outline = "#9cb37c"
-    rain_color = "#7aa7d8"
-    snow_color = "#8db2d6"
-
-    def draw_cloud(x, y, scale=1.0):
-        draw.ellipse((x - 26*scale, y - 2*scale, x - 4*scale, y + 18*scale), fill=cloud_fill, outline=cloud_outline)
-        draw.ellipse((x - 6*scale, y - 12*scale, x + 18*scale, y + 12*scale), fill=cloud_fill, outline=cloud_outline)
-        draw.ellipse((x + 10*scale, y - 2*scale, x + 32*scale, y + 18*scale), fill=cloud_fill, outline=cloud_outline)
-        draw.rounded_rectangle((x - 26*scale, y + 6*scale, x + 32*scale, y + 22*scale), radius=int(10*scale), fill=cloud_fill, outline=cloud_outline)
-
-    def draw_sun(x, y, r=10):
-        draw.ellipse((x-r, y-r, x+r, y+r), fill=sun_fill, outline=sun_line)
-        rays = [(0, -18), (13, -13), (18, 0), (13, 13), (0, 18), (-13, 13), (-18, 0), (-13, -13)]
-        for dx, dy in rays:
-            x1 = x + int(dx * 0.6)
-            y1 = y + int(dy * 0.6)
-            x2 = x + dx
-            y2 = y + dy
-            draw.line((x1, y1, x2, y2), fill=sun_line, width=2)
+    ink = "#466f88"
 
     if kind == "sunny":
-        draw_sun(cx, cy, 10)
+        draw_sketch_sun(draw, cx, cy, ink)
 
     elif kind == "partly":
-        draw_sun(cx - 12, cy - 6, 8)
-        draw_cloud(cx, cy, 1.0)
+        draw_sketch_sun(draw, cx - 10, cy - 3, ink)
+        draw_sketch_cloud(draw, cx + 4, cy + 6, ink)
 
     elif kind == "cloudy":
-        draw_cloud(cx, cy, 1.0)
+        draw_sketch_cloud(draw, cx, cy + 2, ink)
 
     elif kind == "rain":
-        draw_cloud(cx, cy - 4, 1.0)
+        draw_sketch_cloud(draw, cx, cy, ink)
         for offset in [-12, 0, 12]:
-            draw.line((cx + offset, cy + 22, cx + offset - 3, cy + 32), fill=rain_color, width=3)
+            draw_wobbly_line(draw, (cx + offset, cy + 18), (cx + offset - 2, cy + 28), fill=ink, width=2, jitter=0.6, steps=4)
 
     elif kind == "shower":
-        draw_sun(cx - 12, cy - 8, 7)
-        draw_cloud(cx, cy - 2, 1.0)
+        draw_sketch_sun(draw, cx - 10, cy - 5, ink)
+        draw_sketch_cloud(draw, cx + 4, cy + 4, ink)
         for offset in [-10, 2, 14]:
-            draw.line((cx + offset, cy + 20, cx + offset - 3, cy + 30), fill=rain_color, width=3)
+            draw_wobbly_line(draw, (cx + offset, cy + 20), (cx + offset - 2, cy + 30), fill=ink, width=2, jitter=0.6, steps=4)
 
     elif kind == "snow":
-        draw_cloud(cx, cy - 4, 1.0)
+        draw_sketch_cloud(draw, cx, cy, ink)
         for offset in [-12, 0, 12]:
             x = cx + offset
-            y = cy + 28
-            draw.line((x - 4, y, x + 4, y), fill=snow_color, width=2)
-            draw.line((x, y - 4, x, y + 4), fill=snow_color, width=2)
-            draw.line((x - 3, y - 3, x + 3, y + 3), fill=snow_color, width=2)
-            draw.line((x - 3, y + 3, x + 3, y - 3), fill=snow_color, width=2)
+            y = cy + 25
+            draw_wobbly_line(draw, (x - 4, y), (x + 4, y), fill=ink, width=1, jitter=0.4, steps=2)
+            draw_wobbly_line(draw, (x, y - 4), (x, y + 4), fill=ink, width=1, jitter=0.4, steps=2)
 
     else:
-        draw_sun(cx, cy, 10)
+        draw_sketch_sun(draw, cx, cy, ink)
         
 def create_image(values, base_date, base_time):
     width = 171
@@ -177,56 +220,44 @@ def create_image(values, base_date, base_time):
 
     tmp, status, icon_kind, pop, reh = weather_text_and_icon(values)
 
-    img = Image.new("RGB", (width, height), "#d9ecbd")
+    img = Image.new("RGB", (width, height), "#dcebd3")
     draw = ImageDraw.Draw(img)
 
-    # 배경: 네이버 기본 위젯처럼 연하늘+연두 느낌
-    bg_top = "#cfe8ef"
-    bg_mid = "#dff0cf"
-    bg_bottom = "#c9e3b0"
+    # 배경: 수채+종이 느낌
+    base_colors = ["#d7e8d0", "#d8ebe8", "#d9efd2", "#cfe4ee", "#d8eac7"]
+    draw.rectangle((0, 0, width, height), fill="#d9eacb")
 
-    for y in range(height):
-        if y < 60:
-            ratio = y / 60
-            r = int(int(bg_top[1:3], 16) * (1 - ratio) + int(bg_mid[1:3], 16) * ratio)
-            g = int(int(bg_top[3:5], 16) * (1 - ratio) + int(bg_mid[3:5], 16) * ratio)
-            b = int(int(bg_top[5:7], 16) * (1 - ratio) + int(bg_mid[5:7], 16) * ratio)
-        else:
-            ratio = (y - 60) / 60
-            r = int(int(bg_mid[1:3], 16) * (1 - ratio) + int(bg_bottom[1:3], 16) * ratio)
-            g = int(int(bg_mid[3:5], 16) * (1 - ratio) + int(bg_bottom[3:5], 16) * ratio)
-            b = int(int(bg_mid[5:7], 16) * (1 - ratio) + int(bg_bottom[5:7], 16) * ratio)
-        draw.line((0, y, width, y), fill=(r, g, b))
+    random.seed(5)
+    for _ in range(18):
+        color = random.choice(base_colors)
+        x = random.randint(-10, width - 20)
+        y = random.randint(-10, height - 20)
+        w = random.randint(28, 60)
+        h = random.randint(18, 38)
+        draw.ellipse((x, y, x + w, y + h), fill=color)
 
-    # 아주 옅은 종이/수채 느낌 점
-    import random
-    random.seed(7)
-    for _ in range(120):
+    # 잔점 텍스처
+    for _ in range(110):
         x = random.randint(0, width - 1)
         y = random.randint(0, height - 1)
-        alpha_color = random.choice(["#ffffff", "#eef7d8", "#b8d89b", "#c8e7ed"])
-        draw.point((x, y), fill=alpha_color)
+        c = random.choice(["#edf5ea", "#cfe5c7", "#d7ebf3"])
+        draw.point((x, y), fill=c)
 
-    # 둥근 테두리
-    draw.rounded_rectangle(
-        (1, 1, width - 2, height - 2),
-        radius=8,
-        outline="#a7cf7a",
-        width=1
-    )
+    # 아주 약한 외곽
+    draw.rounded_rectangle((1, 1, width - 2, height - 2), radius=7, outline="#bdd6c7", width=1)
 
-    # 폰트
-    font_top = load_font(17)
-    font_bottom = load_font(13)
+    # 폰트 / 색상
+    font_top = load_font(18)
+    font_bottom = load_font(14)
 
-    text_dark = "#2f5f54"
-    text_blue = "#2b8ed6"
+    text_dark = "#2b2b2b"
+    text_blue = "#2a88d4"
 
-    # 상태 영문 변환
+    # 상태 영문
     if icon_kind == "sunny":
         top_text = "SUNNY"
     elif icon_kind == "partly":
-        top_text = "CLOUDY"
+        top_text = "PARTLY"
     elif icon_kind == "cloudy":
         top_text = "CLOUDY"
     elif icon_kind == "rain":
@@ -236,28 +267,33 @@ def create_image(values, base_date, base_time):
     elif icon_kind == "snow":
         top_text = "SNOWY"
     else:
-        top_text = status.upper()
+        top_text = "WEATHER"
 
-    # 1구역: 상단 35px 중앙
-    center_text(draw, top_text, 10, font_top, text_dark, width)
+    # 상단 35
+    center_text(draw, top_text, 8, font_top, text_dark, width)
 
-    # 2구역: 가운데 50px 중앙
-    draw_weather_icon(draw, icon_kind, width // 2, 61)
+    # 중단 50
+    draw_weather_icon(draw, icon_kind, width // 2, 57)
 
-    # 3구역: 하단 35px 중앙
-    bottom_text = f"{AREA_NAME} {tmp}"
-    bbox = draw.textbbox((0, 0), bottom_text, font=font_bottom)
-    text_width = bbox[2] - bbox[0]
-    x = (width - text_width) / 2
-    y = 98
+    # 하단 35
+    bottom_y = 98
+    city_text = f"{AREA_NAME} "
+    temp_text = f"{tmp}"
 
-    draw.text((x, y), f"{AREA_NAME} ", font=font_bottom, fill=text_dark)
+    city_bbox = draw.textbbox((0, 0), city_text, font=font_bottom)
+    temp_bbox = draw.textbbox((0, 0), temp_text, font=font_bottom)
 
-    area_bbox = draw.textbbox((0, 0), f"{AREA_NAME} ", font=font_bottom)
-    area_width = area_bbox[2] - area_bbox[0]
-    draw.text((x + area_width, y), f"{tmp}", font=font_bottom, fill=text_blue)
+    city_w = city_bbox[2] - city_bbox[0]
+    temp_w = temp_bbox[2] - temp_bbox[0]
+    total_w = city_w + temp_w
+
+    start_x = (width - total_w) / 2
+
+    draw.text((start_x, bottom_y), city_text, font=font_bottom, fill=text_dark)
+    draw.text((start_x + city_w, bottom_y), temp_text, font=font_bottom, fill=text_blue)
 
     img.save("weather.png")
+    
 
 def main():
     if not SERVICE_KEY:
