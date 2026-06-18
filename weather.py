@@ -1,23 +1,50 @@
 import os
-import math
-import random
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from PIL import Image, ImageDraw, ImageFont
 
+# =========================
+# 기본 설정
+# =========================
 SERVICE_KEY = os.environ.get("KMA_SERVICE_KEY")
 
 NX = "60"
 NY = "127"
 AREA_NAME = "서울"
 
+ASSET_DIR = "assets"
+FONT_PATH = os.path.join(ASSET_DIR, "fonts", "handwriting.ttf")
+OUTPUT_PATH = "weather.png"
+
+# 텍스트 위치/크기
+FONT_SIZE = 28
+TEXT_Y = 228   # 필요하면 220~238 사이로 조절
+CITY_COLOR = "#3c3328"
+TEMP_COLOR = "#2d8bd8"
+
+# 이미지 파일 매핑
+IMAGE_MAP = {
+    "sunny": "sunny.png",
+    "partly": "partly.png",
+    "cloudy": "cloudy.png",
+    "rainy": "rainy.png",
+    "snowy": "snowy.png",
+}
+
+KST = timezone(timedelta(hours=9))
+
+
+# =========================
+# 발표 시각 계산
+# =========================
 def get_base_datetime():
-    now = datetime.now() + timedelta(hours=9)  # GitHub Actions는 UTC라서 한국시간 보정
+    now = datetime.now(KST)
 
+    # 단기예보 발표시각
     base_times = ["0200", "0500", "0800", "1100", "1400", "1700", "2000", "2300"]
-    current = now.strftime("%H%M")
+    current_hhmm = now.strftime("%H%M")
 
-    available = [t for t in base_times if t <= current]
+    available = [t for t in base_times if t <= current_hhmm]
 
     if available:
         base_date = now.strftime("%Y%m%d")
@@ -29,7 +56,14 @@ def get_base_datetime():
 
     return base_date, base_time
 
+
+# =========================
+# API 호출
+# =========================
 def fetch_weather():
+    if not SERVICE_KEY:
+        raise RuntimeError("KMA_SERVICE_KEY가 없습니다. GitHub Secrets를 확인하세요.")
+
     base_date, base_time = get_base_datetime()
 
     url = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
@@ -48,264 +82,180 @@ def fetch_weather():
     res = requests.get(url, params=params, timeout=20)
 
     if res.status_code == 429:
-        print("KMA API 429 Too Many Requests. Please wait and run again later.")
-        raise RuntimeError("KMA API rate limit: 429 Too Many Requests")
+        raise RuntimeError("기상청 API 요청 제한(429 Too Many Requests)")
 
     res.raise_for_status()
 
     data = res.json()
-    items = data["response"]["body"]["items"]["item"]
 
-    target_date = items[0]["fcstDate"]
-    target_time = items[0]["fcstTime"]
+    try:
+        items = data["response"]["body"]["items"]["item"]
+    except Exception:
+        raise RuntimeError(f"API 응답 형식이 예상과 다릅니다: {data}")
+
+    if not items:
+        raise RuntimeError("API 응답에 예보 데이터가 없습니다.")
+
+    return items
+
+
+# =========================
+# 현재에 가장 가까운 예보 1세트 선택
+# =========================
+def choose_target_forecast(items):
+    now = datetime.now(KST)
+    now_key = now.strftime("%Y%m%d%H00")
+
+    # fcstDate+fcstTime 후보 모으기
+    forecast_keys = sorted({item["fcstDate"] + item["fcstTime"] for item in items})
+
+    target_key = None
+    for key in forecast_keys:
+        if key >= now_key:
+            target_key = key
+            break
+
+    if target_key is None:
+        target_key = forecast_keys[0]
 
     values = {}
     for item in items:
-        if item["fcstDate"] == target_date and item["fcstTime"] == target_time:
+        key = item["fcstDate"] + item["fcstTime"]
+        if key == target_key:
             values[item["category"]] = item["fcstValue"]
 
-    return values, base_date, base_time
+    return values
 
-def weather_text_and_icon(values):
-    tmp = values.get("TMP", "-")
-    sky = values.get("SKY", "1")
-    pty = values.get("PTY", "0")
-    pop = values.get("POP", "-")
-    reh = values.get("REH", "-")
 
+# =========================
+# 날씨 분류
+# =========================
+def classify_weather(values):
+    tmp = str(values.get("TMP", "--"))
+    sky = str(values.get("SKY", "1"))
+    pty = str(values.get("PTY", "0"))
+
+    # PTY 우선
     if pty == "1":
-        status = "비"
-        icon_kind = "rain"
+        icon_kind = "rainy"   # 비
     elif pty == "2":
-        status = "비/눈"
-        icon_kind = "snow"
+        icon_kind = "snowy"   # 비/눈
     elif pty == "3":
-        status = "눈"
-        icon_kind = "snow"
+        icon_kind = "snowy"   # 눈
     elif pty == "4":
-        status = "소나기"
-        icon_kind = "shower"
+        icon_kind = "rainy"   # 소나기
     else:
         if sky == "1":
-            status = "맑음"
             icon_kind = "sunny"
         elif sky == "3":
-            status = "구름많음"
             icon_kind = "partly"
         elif sky == "4":
-            status = "흐림"
             icon_kind = "cloudy"
         else:
-            status = "날씨"
             icon_kind = "sunny"
 
-    return tmp, status, icon_kind, pop, reh
+    return icon_kind, tmp
 
+
+# =========================
+# 폰트 로드
+# =========================
 def load_font(size):
-    candidates = [
+    if os.path.exists(FONT_PATH):
+        return ImageFont.truetype(FONT_PATH, size)
+
+    # 폰트가 없을 때 fallback
+    fallback_candidates = [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
 
-    for path in candidates:
+    for path in fallback_candidates:
         if os.path.exists(path):
             return ImageFont.truetype(path, size)
 
     return ImageFont.load_default()
 
-def center_text(draw, text, y, font, fill, image_width):
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = bbox[2] - bbox[0]
-    x = (image_width - text_width) / 2
-    draw.text((x, y), text, font=font, fill=fill)
 
+# =========================
+# 가운데 정렬로 "서울 29" 쓰기
+# =========================
+def draw_location_temp(draw, area_name, temp, font, image_width, y):
+    city_text = f"{area_name} "
+    temp_text = f"{temp}"
 
-
-def draw_wobbly_line(draw, p1, p2, fill, width=2, jitter=1.2, steps=6):
-    x1, y1 = p1
-    x2, y2 = p2
-    points = []
-    for i in range(steps + 1):
-        t = i / steps
-        x = x1 + (x2 - x1) * t
-        y = y1 + (y2 - y1) * t
-        if 0 < i < steps:
-            x += random.uniform(-jitter, jitter)
-            y += random.uniform(-jitter, jitter)
-        points.append((x, y))
-    draw.line(points, fill=fill, width=width)
-
-
-def draw_wobbly_circle(draw, cx, cy, r, outline, width=2, jitter=1.2, points_count=24):
-    points = []
-    for i in range(points_count + 1):
-        ang = (math.pi * 2) * i / points_count
-        rr = r + random.uniform(-jitter, jitter)
-        x = cx + math.cos(ang) * rr
-        y = cy + math.sin(ang) * rr
-        points.append((x, y))
-    draw.line(points, fill=outline, width=width)
-
-
-def draw_sketch_sun(draw, cx, cy, ink):
-    random.seed(11)
-
-    # 얼굴 원
-    draw_wobbly_circle(draw, cx, cy, 11, outline=ink, width=2, jitter=0.8)
-
-    # 눈
-    draw.ellipse((cx - 5, cy - 2, cx - 3, cy, ), fill=ink)
-    draw.ellipse((cx + 3, cy - 2, cx + 5, cy, ), fill=ink)
-
-    # 입
-    draw.arc((cx - 5, cy + 1, cx + 5, cy + 7), start=15, end=165, fill=ink, width=1)
-
-    # 광선
-    rays = [
-        (0, -22), (9, -19), (18, -10), (22, 0), (18, 10),
-        (9, 19), (0, 22), (-9, 19), (-18, 10), (-22, 0),
-        (-18, -10), (-9, -19)
-    ]
-    for dx, dy in rays:
-        length_scale = random.uniform(0.88, 1.08)
-        x1 = cx + dx * 0.62
-        y1 = cy + dy * 0.62
-        x2 = cx + dx * length_scale
-        y2 = cy + dy * length_scale
-        draw_wobbly_line(draw, (x1, y1), (x2, y2), fill=ink, width=2, jitter=0.7, steps=4)
-
-
-def draw_sketch_cloud(draw, cx, cy, ink):
-    random.seed(17)
-    draw.arc((cx - 28, cy - 2, cx - 6, cy + 18), start=180, end=360, fill=ink, width=2)
-    draw.arc((cx - 10, cy - 12, cx + 10, cy + 12), start=180, end=360, fill=ink, width=2)
-    draw.arc((cx + 6, cy - 4, cx + 28, cy + 16), start=180, end=360, fill=ink, width=2)
-    draw_wobbly_line(draw, (cx - 28, cy + 8), (cx + 28, cy + 8), fill=ink, width=2, jitter=0.6, steps=7)
-
-
-def draw_weather_icon(draw, kind, cx, cy):
-    ink = "#466f88"
-
-    if kind == "sunny":
-        draw_sketch_sun(draw, cx, cy, ink)
-
-    elif kind == "partly":
-        draw_sketch_sun(draw, cx - 10, cy - 3, ink)
-        draw_sketch_cloud(draw, cx + 4, cy + 6, ink)
-
-    elif kind == "cloudy":
-        draw_sketch_cloud(draw, cx, cy + 2, ink)
-
-    elif kind == "rain":
-        draw_sketch_cloud(draw, cx, cy, ink)
-        for offset in [-12, 0, 12]:
-            draw_wobbly_line(draw, (cx + offset, cy + 18), (cx + offset - 2, cy + 28), fill=ink, width=2, jitter=0.6, steps=4)
-
-    elif kind == "shower":
-        draw_sketch_sun(draw, cx - 10, cy - 5, ink)
-        draw_sketch_cloud(draw, cx + 4, cy + 4, ink)
-        for offset in [-10, 2, 14]:
-            draw_wobbly_line(draw, (cx + offset, cy + 20), (cx + offset - 2, cy + 30), fill=ink, width=2, jitter=0.6, steps=4)
-
-    elif kind == "snow":
-        draw_sketch_cloud(draw, cx, cy, ink)
-        for offset in [-12, 0, 12]:
-            x = cx + offset
-            y = cy + 25
-            draw_wobbly_line(draw, (x - 4, y), (x + 4, y), fill=ink, width=1, jitter=0.4, steps=2)
-            draw_wobbly_line(draw, (x, y - 4), (x, y + 4), fill=ink, width=1, jitter=0.4, steps=2)
-
-    else:
-        draw_sketch_sun(draw, cx, cy, ink)
-        
-def create_image(values, base_date, base_time):
-    width = 171
-    height = 120
-
-    tmp, status, icon_kind, pop, reh = weather_text_and_icon(values)
-
-    img = Image.new("RGB", (width, height), "#dcebd3")
-    draw = ImageDraw.Draw(img)
-
-    # 배경: 수채+종이 느낌
-    base_colors = ["#d7e8d0", "#d8ebe8", "#d9efd2", "#cfe4ee", "#d8eac7"]
-    draw.rectangle((0, 0, width, height), fill="#d9eacb")
-
-    random.seed(5)
-    for _ in range(18):
-        color = random.choice(base_colors)
-        x = random.randint(-10, width - 20)
-        y = random.randint(-10, height - 20)
-        w = random.randint(28, 60)
-        h = random.randint(18, 38)
-        draw.ellipse((x, y, x + w, y + h), fill=color)
-
-    # 잔점 텍스처
-    for _ in range(110):
-        x = random.randint(0, width - 1)
-        y = random.randint(0, height - 1)
-        c = random.choice(["#edf5ea", "#cfe5c7", "#d7ebf3"])
-        draw.point((x, y), fill=c)
-
-    # 아주 약한 외곽
-    draw.rounded_rectangle((1, 1, width - 2, height - 2), radius=7, outline="#bdd6c7", width=1)
-
-    # 폰트 / 색상
-    font_top = load_font(18)
-    font_bottom = load_font(14)
-
-    text_dark = "#2b2b2b"
-    text_blue = "#2a88d4"
-
-    # 상태 영문
-    if icon_kind == "sunny":
-        top_text = "SUNNY"
-    elif icon_kind == "partly":
-        top_text = "PARTLY"
-    elif icon_kind == "cloudy":
-        top_text = "CLOUDY"
-    elif icon_kind == "rain":
-        top_text = "RAINY"
-    elif icon_kind == "shower":
-        top_text = "SHOWER"
-    elif icon_kind == "snow":
-        top_text = "SNOWY"
-    else:
-        top_text = "WEATHER"
-
-    # 상단 35
-    center_text(draw, top_text, 8, font_top, text_dark, width)
-
-    # 중단 50
-    draw_weather_icon(draw, icon_kind, width // 2, 57)
-
-    # 하단 35
-    bottom_y = 98
-    city_text = f"{AREA_NAME} "
-    temp_text = f"{tmp}"
-
-    city_bbox = draw.textbbox((0, 0), city_text, font=font_bottom)
-    temp_bbox = draw.textbbox((0, 0), temp_text, font=font_bottom)
+    city_bbox = draw.textbbox((0, 0), city_text, font=font)
+    temp_bbox = draw.textbbox((0, 0), temp_text, font=font)
 
     city_w = city_bbox[2] - city_bbox[0]
     temp_w = temp_bbox[2] - temp_bbox[0]
     total_w = city_w + temp_w
 
-    start_x = (width - total_w) / 2
+    start_x = (image_width - total_w) / 2
 
-    draw.text((start_x, bottom_y), city_text, font=font_bottom, fill=text_dark)
-    draw.text((start_x + city_w, bottom_y), temp_text, font=font_bottom, fill=text_blue)
+    draw.text((start_x, y), city_text, font=font, fill=CITY_COLOR)
+    draw.text((start_x + city_w, y), temp_text, font=font, fill=TEMP_COLOR)
 
-    img.save("weather.png")
-    
 
+# =========================
+# 이미지 합성
+# =========================
+def create_weather_image(icon_kind, temp):
+    filename = IMAGE_MAP.get(icon_kind, "sunny.png")
+    bg_path = os.path.join(ASSET_DIR, filename)
+
+    if not os.path.exists(bg_path):
+        raise RuntimeError(f"배경 이미지가 없습니다: {bg_path}")
+
+    img = Image.open(bg_path).convert("RGBA")
+    draw = ImageDraw.Draw(img)
+    font = load_font(FONT_SIZE)
+
+    draw_location_temp(draw, AREA_NAME, temp, font, img.width, TEXT_Y)
+
+    img.save(OUTPUT_PATH)
+
+
+# =========================
+# 실패 시 기본 이미지 생성
+# =========================
+def create_fallback_image():
+    bg_path = os.path.join(ASSET_DIR, "sunny.png")
+
+    if not os.path.exists(bg_path):
+        raise RuntimeError("fallback용 sunny.png도 없습니다.")
+
+    img = Image.open(bg_path).convert("RGBA")
+    draw = ImageDraw.Draw(img)
+    font = load_font(FONT_SIZE)
+
+    draw_location_temp(draw, AREA_NAME, "--", font, img.width, TEXT_Y)
+    img.save(OUTPUT_PATH)
+
+
+# =========================
+# 메인
+# =========================
 def main():
-    if not SERVICE_KEY:
-        raise RuntimeError("KMA_SERVICE_KEY가 없습니다. GitHub Secrets를 확인하세요.")
+    try:
+        items = fetch_weather()
+        values = choose_target_forecast(items)
+        icon_kind, temp = classify_weather(values)
+        create_weather_image(icon_kind, temp)
+        print(f"완료: {icon_kind}, {AREA_NAME} {temp}")
+    except Exception as e:
+        print(f"[경고] 날씨 이미지 생성 중 오류: {e}")
 
-    values, base_date, base_time = fetch_weather()
-    create_image(values, base_date, base_time)
+        # 기존 weather.png가 있으면 유지
+        if os.path.exists(OUTPUT_PATH):
+            print("기존 weather.png를 유지합니다.")
+            return
+
+        # 기존 파일도 없으면 fallback 생성
+        print("기존 weather.png가 없어 fallback 이미지를 생성합니다.")
+        create_fallback_image()
+
 
 if __name__ == "__main__":
     main()
