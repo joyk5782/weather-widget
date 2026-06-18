@@ -95,10 +95,11 @@ def weather_text_and_icon(values):
     return tmp, status, icon, pop, reh
 
 def load_font(size):
-    candidates = [
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
+candidates = [
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+]
 
     for path in candidates:
         if os.path.exists(path):
