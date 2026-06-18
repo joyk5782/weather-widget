@@ -46,7 +46,12 @@ def fetch_weather():
     }
 
     res = requests.get(url, params=params, timeout=20)
-    res.raise_for_status()
+
+if res.status_code == 429:
+    print("Too many requests from KMA API. Keeping existing weather.png if available.")
+    raise RuntimeError("KMA API rate limit: 429 Too Many Requests")
+
+res.raise_for_status()
 
     data = res.json()
     items = data["response"]["body"]["items"]["item"]
