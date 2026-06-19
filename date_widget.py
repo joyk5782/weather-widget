@@ -17,14 +17,6 @@ WIDGET_HEIGHT = 279
 FONT_SIZE = 23
 TEXT_Y = 70
 
-TEXT_COLOR_MAP = {
-    "dawn": "#5c5243",       # 새벽: 밝은 배경이라 진한 회갈색
-    "morning": "#4f4535",    # 아침: 기존색 유지
-    "afternoon": "#4f4535",  # 오후: 기존색 유지
-    "night": "#f4edcf",      # 밤: 밝은 아이보리색
-}
-
-
 KST = timezone(timedelta(hours=9))
 
 # 시간대별 배경 이미지
@@ -33,6 +25,35 @@ BACKGROUND_MAP = {
     "morning": "date_morning.png",
     "afternoon": "date_afternoon.png",
     "night": "date_night.png",
+}
+
+# 시간대별 글씨 색상
+TEXT_COLOR_MAP = {
+    "dawn": "#5c5243",       # 새벽: 밝은 배경용 진한 회갈색
+    "morning": "#4f4535",    # 아침: 기존 진한 갈색
+    "afternoon": "#4f4535",  # 오후: 기존 진한 갈색
+    "night": "#f4edcf",      # 밤: 어두운 배경용 밝은 아이보리
+}
+
+# 시간대별 외곽선 설정
+# None이면 외곽선 없음
+TEXT_STROKE_MAP = {
+    "dawn": {
+        "stroke_fill": None,
+        "stroke_width": 0,
+    },
+    "morning": {
+        "stroke_fill": None,
+        "stroke_width": 0,
+    },
+    "afternoon": {
+        "stroke_fill": None,
+        "stroke_width": 0,
+    },
+    "night": {
+        "stroke_fill": "#2c315f",  # 밤 배경과 어울리는 남보라색 외곽선
+        "stroke_width": 1,
+    },
 }
 
 
@@ -83,11 +104,28 @@ def load_font(size):
 # =========================
 # 가운데 정렬 텍스트
 # =========================
-def draw_center_text(draw, text, y, font, fill, image_width):
+def draw_center_text(
+    draw,
+    text,
+    y,
+    font,
+    fill,
+    image_width,
+    stroke_fill=None,
+    stroke_width=0,
+):
     bbox = draw.textbbox((0, 0), text, font=font)
     text_width = bbox[2] - bbox[0]
     x = (image_width - text_width) / 2
-    draw.text((x, y), text, font=font, fill=fill)
+
+    draw.text(
+        (x, y),
+        text,
+        font=font,
+        fill=fill,
+        stroke_fill=stroke_fill,
+        stroke_width=stroke_width,
+    )
 
 
 # =========================
@@ -115,13 +153,18 @@ def create_date_image():
     weekday = get_korean_weekday(now)
     date_text = f"{now.year}.{now.month:02d}.{now.day:02d} {weekday}"
 
+    text_color = TEXT_COLOR_MAP[period]
+    stroke_config = TEXT_STROKE_MAP[period]
+
     draw_center_text(
         draw=draw,
         text=date_text,
         y=TEXT_Y,
         font=font,
-        fill=TEXT_COLOR,
+        fill=text_color,
         image_width=img.width,
+        stroke_fill=stroke_config["stroke_fill"],
+        stroke_width=stroke_config["stroke_width"],
     )
 
     img.save(OUTPUT_PATH)
