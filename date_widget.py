@@ -15,7 +15,7 @@ WIDGET_HEIGHT = 279
 
 # 날짜 글씨 설정
 FONT_SIZE = 21
-TEXT_Y = 172
+TEXT_Y = 50
 
 TEXT_COLOR = "#4f4535"
 
