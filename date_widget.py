@@ -17,7 +17,13 @@ WIDGET_HEIGHT = 279
 FONT_SIZE = 23
 TEXT_Y = 70
 
-TEXT_COLOR = "#4f4535"
+TEXT_COLOR_MAP = {
+    "dawn": "#5c5243",       # 새벽: 밝은 배경이라 진한 회갈색
+    "morning": "#4f4535",    # 아침: 기존색 유지
+    "afternoon": "#4f4535",  # 오후: 기존색 유지
+    "night": "#f4edcf",      # 밤: 밝은 아이보리색
+}
+
 
 KST = timezone(timedelta(hours=9))
 
