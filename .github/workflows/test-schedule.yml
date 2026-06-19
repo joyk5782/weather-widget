@@ -1,6 +1,6 @@
 name: Test schedule
 
-'on':
+on:
   push:
     branches:
       - main
