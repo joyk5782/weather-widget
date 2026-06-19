@@ -1,6 +1,7 @@
 name: Update date image
 
-on:
+
+'on':
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
