@@ -1,8 +1,5 @@
 name: Update date image
 
-
-name: Update date image
-
 on:
   schedule:
     - cron: "7 15,21,3,9 * * *"
