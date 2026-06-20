@@ -2,7 +2,7 @@ name: Update date image
 
 on:
   schedule:
-    - cron: "7 15,21,3,9 * * *"
+    - cron: "37 * * * *"
   workflow_dispatch:
 
 permissions:
