@@ -1,4 +1,4 @@
-name: Update weather image
+name: Update images
 
 on:
   schedule:
@@ -7,19 +7,21 @@ on:
 
 concurrency:
   group: pages-image-update
-  cancel-in-progress: true
-  
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
 jobs:
-  update-weather:
+  update-images:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -29,14 +31,27 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Generate date image
+        run: python date_widget.py
+
       - name: Generate weather image
         env:
           KMA_SERVICE_KEY: ${{ secrets.KMA_SERVICE_KEY }}
         run: python weather.py
 
-      - name: Commit weather image
+      - name: Commit and push images
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add weather.png
-          git diff --cached --quiet && echo "No changes to commit" || (git commit -m "Update weather image" && git push)
+
+          git add date.png weather.png
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "Update images"
+
+          git pull --rebase origin main
+          git push origin main
